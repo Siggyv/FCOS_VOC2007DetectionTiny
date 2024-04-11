@@ -15,6 +15,8 @@ The model utilizes a feature pyramid to calculate loss at each respective level 
 
 If it wasn't apparent the name FCOS is very fitting.
 
+During inference, the model is capable of near real time classification and utilizes NMS (Non-Maximum Suppression) to remove poor object predictions.
+
 Loss Curve:
 
 
