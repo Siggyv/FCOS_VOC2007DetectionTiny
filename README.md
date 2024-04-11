@@ -1,3 +1,6 @@
+### FCOS ###
+# Model trained utilizing the VOC2007DetectionTiny dataset#
+
 This is a recreation of the FCOS model outlined in the paper cited below. There is one key difference between their model and my model. In the paper outlined below there are two
 stems used to produce the classification logits, and box deltas. The classification logits are then used (in my model) to predict ONLY the class of the object. The box deltas created by the second stem are used to predict the bounding box, and centerness of the bounding box. 
 
