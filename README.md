@@ -20,7 +20,7 @@ Loss Curve:
 
 Potential improvements:
 - As common in AI, I believe a larger dataset would help the model perform much better. More akin to the performance in the paper below (this includes more training time).
-- A larger backbone model would allow the model to learn more complex features.
+- A larger backbone model would allow the model to learn more complex features, the paper utilizes resNet-50, which I utilize a simple 3 layer CNN.
 - The code written does not do enough attention to detail to maintain device consistency, additionally, torch broadcasting and tensor operations could potentially be applied to this network to speed up training time. (Maybe concurrency, but would avoid this due to encapsulation).
 
 Zhi Tian, Chunhua Shen, Hao Chen, and Tong He, "FCOS: Fully Convolutional One-Stage Object Detection," 2019, arXiv:1904.01355.
