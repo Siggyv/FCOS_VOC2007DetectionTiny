@@ -18,11 +18,19 @@ If it wasn't apparent the name FCOS is very fitting.
 During inference, the model is capable of near real time classification and utilizes NMS (Non-Maximum Suppression) to remove poor object predictions.
 
 Loss Curve:
+![image](https://github.com/Siggyv/FCOS_VOC2007DetectionTiny/assets/93465187/5099a29f-8d2c-43f2-9b5a-994f5a7e8fcb)
 
+Inference Image:
+![image](https://github.com/Siggyv/FCOS_VOC2007DetectionTiny/assets/93465187/6750c703-b2d0-4ec9-9b75-19915563944b)
+
+Inference took 1.2 seconds for 4 images.
+
+mAP is 22%
 
 Potential improvements:
 - As common in AI, I believe a larger dataset would help the model perform much better. More akin to the performance in the paper below (this includes more training time).
 - A larger backbone model would allow the model to learn more complex features, the paper utilizes resNet-50, which I utilize a simple 3 layer CNN.
 - The code written does not do enough attention to detail to maintain device consistency, additionally, torch broadcasting and tensor operations could potentially be applied to this network to speed up training time. (Maybe concurrency, but would avoid this due to encapsulation).
+- I believe there may be an issue with switching x, and y values, but it is hard to tell where this occurs.
 
 Zhi Tian, Chunhua Shen, Hao Chen, and Tong He, "FCOS: Fully Convolutional One-Stage Object Detection," 2019, arXiv:1904.01355.
