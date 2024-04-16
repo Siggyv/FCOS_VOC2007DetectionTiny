@@ -150,8 +150,8 @@ class DetectorBackboneWithFPN(nn.Module):
         p3_bef = self.fpn_params['c3'](backbone_feats['c3'])
 
         # combine p4 and p3 to get p3 and combine p5 and p4 to get p4.
-        fpn_feats['p3'] = self.fpn_params['p3p4p5'](p3_bef + F.interpolate(p4_bef,size=p3_bef.shape[2:]))
-        fpn_feats['p4'] = self.fpn_params['p4p5'](p4_bef + F.interpolate(p5_bef, size=p4_bef.shape[2:]))
+        fpn_feats['p3'] = self.fpn_params['p3p4p5'](p3_bef + F.interpolate(p4_bef,size=p3_bef.shape[2:], mode='bilinear'))
+        fpn_feats['p4'] = self.fpn_params['p4p5'](p4_bef + F.interpolate(p5_bef, size=p4_bef.shape[2:], mode='bilinear'))
 
         # p5 is left the same
         fpn_feats['p5'] = self.fpn_params['p5'](p5_bef)
@@ -252,46 +252,40 @@ def nms(boxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float = 0.5):
     # github.com/pytorch/vision/blob/main/torchvision/csrc/ops/cpu/nms_kernel.cpp
     #############################################################################
     #print(iou((50,100,200,300),(80,120,220,310)))
-
     sc, indices = torch.sort(scores, descending=True)
-    suppressed = torch.zeros(scores.shape, dtype=torch.int)
-    numToKeep = 0
+    sorted_boxes = boxes[indices]
     keep = []
     #print(scores.shape, len(scores))
-
-    for i in range(len(scores)):
-        #if i % 100 == 0: print(i)
-        if suppressed[i] == 1:
-            continue
-        numToKeep += 1
-        keep = keep + [indices[i]]
-        suppressed[i] == -1
-        for j in range(i+1, len(scores)):
-            if suppressed[j] != 1 and iou(boxes[indices[i]], boxes[indices[j]]) > iou_threshold:
-                suppressed[j] = 1
-
+    while sorted_boxes.size(0) > 0:
+      best = sorted_boxes[:1, :]
+      keep.append(indices[0].item())
+      if sorted_boxes.size(0) == 1:
+        break
+      # compute ious for every box
+      ious = iou(best, sorted_boxes[1:,:]).squeeze()
+  
+      sorted_boxes = sorted_boxes[1:][ious <= iou_threshold]
+      indices = indices[1:][ious <= iou_threshold]
     keep = torch.tensor(keep, dtype=torch.long, device=scores.device)
-
-
     #############################################################################
     #                              END OF YOUR CODE                             #
     #############################################################################
     return keep
 
-def iou(box1, box2):
-  ax1, ay1, ax2, ay2 = box1
-  bx1, by1, bx2, by2 = box2
-  # area of intersection
-  w = max(0, min(ax2, bx2) - max(ax1, bx1))
-  h = max(0, min(ay2, by2) - max(ay1, by1))
-  intersection_area = w * h
+def iou(good_box, rest):
+  # broadcast intersection
+  x1 = torch.max(good_box[:, None, 0], rest[:, 0])
+  y1 = torch.max(good_box[:, None, 1], rest[:, 1])
+  x2 = torch.min(good_box[:, None, 2], rest[:, 2])
+  y2 = torch.min(good_box[:, None, 3], rest[:, 3]) 
 
-  # area of each bounding box
-  area1 = (ax2 - ax1) * (ay2 - ay1)
-  area2 = (bx2 - bx1) * (by2 - by1)
+  intersection_area = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
 
-  # IOU
-  return intersection_area / (area1 + area2 - intersection_area)
+  area_good = (good_box[:,2] - good_box[:,0]) * (good_box[:,3] - good_box[:,1])
+  rest_areas = (rest[:,2] - rest[:,0]) * (rest[:,3] - rest[:,1])
+  union = area_good[:, None] + rest_areas - intersection_area
+
+  return intersection_area / union
 
 
 def class_spec_nms(
@@ -604,24 +598,22 @@ def fcos_get_deltas_from_locations(
     # Set this to Tensor of shape (N, 4) giving deltas (left, top, right, bottom)
     # from the locations to GT box edges, normalized by FPN stride.
     deltas = None
+    # get background mask to set later to [-1,-1,-1,-1] if label exist
+    haslabel = gt_boxes.size(1) == 5
+    if haslabel:
+      background = (gt_boxes[:,4] == -1)
+      gt_boxes = gt_boxes[:, :4]
+    xc,yc = locations[:, 0], locations[:,1]
+    gt_boxes = gt_boxes
+    x1,y1,x2,y2 = gt_boxes[:,0], gt_boxes[:,1], gt_boxes[:,2], gt_boxes[:,3]
+    l = (xc - x1) / stride
+    t = (yc - y1) / stride
+    r = (x2 - xc) / stride
+    b = (y2 - yc) / stride
 
-    # Replace "PASS" statement with your code
-    # check for class label
-    label_exists = len(gt_boxes[0]) == 5
-    N = gt_boxes.shape[0]
-    deltas = torch.zeros(N, 4)
-    for i in range(N):
-        if label_exists and gt_boxes[i,-1] == -1:
-            deltas[i] = torch.tensor([-1,-1,-1,-1])
-            continue
-        # otherwise calculate deltas like normal
-        # gt_box = (x1,y1,x2,y2)
-        # locations = (xc,yc)
-        #l = (xc - x1) / stride              t = (yc - y1) / stride
-        # r = (x2 - xc) / stride              b = (y2 - yc) / stride
-        x1,y1,x2,y2 = gt_boxes[i,:4]
-        xc,yc = locations[i]
-        deltas[i] = torch.tensor([(xc - x1) / stride, (yc - y1) / stride, (x2 - xc) / stride, (y2 - yc) / stride])
+    deltas = torch.stack([l,t,r,b], dim=-1)
+    if haslabel:
+      deltas[background, :] = -1
     ##########################################################################
     #                             END OF YOUR CODE                           #
     ##########################################################################
@@ -663,16 +655,13 @@ def fcos_apply_deltas_to_locations(
     # box. Make sure to clip them to zero.                                   #
     ##########################################################################
     output_boxes = None
-    # Replace "PASS" statement with your code
-    N = deltas.shape[0]
     # clips negative deltas to zero
-    zerod_deltas = deltas.clamp(min=0)
-    output_boxes = torch.zeros(N,4)
-    # do inverse of get deltas
-    for i in range(N):
-        l,t,r,b = zerod_deltas[i]
-        xc, yc = locations[i]
-        output_boxes[i] = torch.tensor([xc-(l*stride), yc - (t*stride), xc + (r*stride), yc + (b*stride)])
+    zerod_deltas = deltas.clamp(min=0).to(locations.device)
+    l,t,r,b = zerod_deltas[:,0],zerod_deltas[:,1],zerod_deltas[:,2],zerod_deltas[:,3]
+    xc,yc = locations[:,0],locations[:,1]
+
+    output_boxes = torch.stack([xc-(l*stride), yc - (t*stride), xc + (r*stride), yc + (b*stride)], dim=1)
+
     ##########################################################################
     #                             END OF YOUR CODE                           #
     ##########################################################################
@@ -702,18 +691,13 @@ def fcos_make_centerness_targets(deltas: torch.Tensor):
     ##########################################################################
     centerness = None
     # Replace "PASS" statement with your code
-    N = deltas.shape[0]
-    centerness = torch.zeros(N, dtype=deltas.dtype, device=deltas.device)
-    for i in range(N):
-        # check if background
-        if torch.all(deltas[i] == -1):
-            centerness[i] = -1
-            continue
-        l,t,r,b = deltas[i]
-        top = min(l,r) * min(t,b)
-        bot = max(l,r) * max(t,b)
-        centerness[i] = torch.sqrt(top/bot)
-
+    # get background deltas
+    background = (deltas == -1).all(dim=1)
+    
+    l,t,r,b = deltas.unbind(dim=1)
+    centerness = torch.sqrt((torch.min(l, r) * torch.min(t, b))/ (torch.max(l, r) * torch.max(t, b)))
+    # account for background
+    centerness[background] = -1
     ##########################################################################
     #                             END OF YOUR CODE                           #
     ##########################################################################
@@ -1055,6 +1039,12 @@ class FCOS(nn.Module):
 
             # Step 4: Use `images` to get (height, width) for clipping.
             #TODO:
+            _,_,H,W = images.shape
+            level_pred_boxes[:, 0] = torch.clamp(level_pred_boxes[:, 0], min=0, max=W)
+            level_pred_boxes[:, 1] = torch.clamp(level_pred_boxes[:, 1], min=0, max=H)
+            level_pred_boxes[:, 2] = torch.clamp(level_pred_boxes[:, 2], min=0, max=W)
+            level_pred_boxes[:, 3] = torch.clamp(level_pred_boxes[:, 3], min=0, max=H)
+
             if verbose:
               print("pred boxes: ", level_pred_boxes.shape)
               print(level_pred_boxes[:5])
